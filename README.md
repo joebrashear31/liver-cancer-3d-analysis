@@ -91,12 +91,12 @@ This computes Dice scores and shows visual slice comparisons.
 
 ### 3️⃣ Run Inference on New Volumes
 To generate predictions for a new CT volume:
-- Place it at: `data/inference/sample_volume.nii.gz`
+- Place it at: `data/inference/sample_volume.nii`
 - Then run:
 ```bash
 python inference.py
 ```
-Predicted mask will be saved at: `outputs/sample_prediction.nii.gz`
+Predicted mask will be saved at: `outputs/sample_prediction.nii`
 
 ---
 
