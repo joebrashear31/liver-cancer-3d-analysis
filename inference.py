@@ -6,8 +6,8 @@ import numpy as np
 from scripts.unet3d import UNet3D
 
 # --- Configuration ---
-input_path = 'data/inference/sample_volume.nii'
-output_path = 'outputs/sample_prediction.nii'
+input_path = 'data/inference/sample_volume'
+output_path = 'outputs/sample_prediction.nii.gz'
 checkpoint_path = 'models/unet3d_checkpoint.pth'
 output_classes = 3  # background, liver, tumor
 

@@ -2,8 +2,8 @@ import os
 import nibabel as nib
 import matplotlib.pyplot as plt
 
-image_path = "data/images/volume-0.nii"
-mask_path = "data/masks/segmentation-0.nii"
+image_path = "data/images/volume-0.nii.gz"
+mask_path = "data/masks/segmentation-0.nii.gz"
 
 # Load the volumes
 image = nib.load(image_path).get_fdata()

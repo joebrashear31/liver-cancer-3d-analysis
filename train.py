@@ -11,7 +11,7 @@ from tqdm import tqdm
 # --- Configuration ---
 image_dir = 'data/images'
 mask_dir = 'data/masks'
-batch_size = 2
+batch_size = 1
 epochs = 10
 learning_rate = 1e-4
 checkpoint_path = 'models/unet3d_checkpoint.pth'
