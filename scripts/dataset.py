@@ -24,33 +24,36 @@ class LiverTumorDataset(Dataset):
         image = nib.load(image_path).get_fdata()
         mask = nib.load(mask_path).get_fdata()
 
-        # Normalize image
-        image = np.clip(image, 0, 400) / 400.0
-
-        image = torch.tensor(image, dtype=torch.float32)  # (D, H, W)
-        mask = torch.tensor(mask, dtype=torch.long)       # (D, H, W)
-
-        # Target shape
-        target_shape = (96, 96, 96)
-        D, H, W = target_shape
+        image = np.clip(image, 0, 400) / 400.0  # normalize
+        image = torch.tensor(image, dtype=torch.float32)
+        mask = torch.tensor(mask, dtype=torch.long)
 
         # Find tumor bounding box
         bbox = find_objects((mask > 0).numpy())
         if not bbox:
-            # fallback: center crop (or skip by raising error)
-            center = [s // 2 for s in mask.shape]
+            center = [s // 2 for s in mask.shape]  # fallback: center
         else:
             bbox = bbox[0]
             center = [(s.start + s.stop) // 2 for s in bbox]
 
-        # Compute start and end slices
-        start = [max(0, c - t // 2) for c, t in zip(center, target_shape)]
-        end = [min(start[i] + target_shape[i], mask.shape[i]) for i in range(3)]
-        start = [end[i] - target_shape[i] for i in range(3)]  # adjust start if near edge
+        # Define crop coordinates
+        D, H, W = self.target_shape
+        start = [max(0, c - s // 2) for c, s in zip(center, self.target_shape)]
+        end = [min(start[i] + self.target_shape[i], mask.shape[i]) for i in range(3)]
+        start = [max(0, end[i] - self.target_shape[i]) for i in range(3)]
 
         # Crop
         image = image[start[0]:end[0], start[1]:end[1], start[2]:end[2]]
         mask = mask[start[0]:end[0], start[1]:end[1], start[2]:end[2]]
+
+        # Pad if crop is smaller
+        pad_dims = [
+            (0, max(0, W - image.shape[2])),  # width
+            (0, max(0, H - image.shape[1])),  # height
+            (0, max(0, D - image.shape[0])),  # depth
+        ]
+        image = F.pad(image, pad_dims, mode='constant', value=0)
+        mask = F.pad(mask, pad_dims, mode='constant', value=0)
 
         # Add channel dimension to image
         image = image.unsqueeze(0)  # shape: (1, D, H, W)
