@@ -40,8 +40,10 @@ class LiverTumorDataset(Dataset):
         # Resize image using trilinear interpolation
         image = F.interpolate(image.unsqueeze(0), size=target_shape, mode='trilinear', align_corners=False).squeeze(0)
 
-        # Resize mask using nearest-neighbor to preserve class labels
-        mask = F.interpolate(mask.unsqueeze(0).unsqueeze(0).float(), size=target_shape, mode='nearest').squeeze(0).long()
+        # Resize mask (correctly remove both added dims)
+        mask = F.interpolate(mask.unsqueeze(0).unsqueeze(0).float(), size=target_shape, mode='nearest')
+        mask = mask.squeeze(0).squeeze(0).long()  # Final shape: (D, H, W)
+
 
         # Apply optional transforms
         if self.transform:

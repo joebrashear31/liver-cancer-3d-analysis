@@ -5,6 +5,8 @@ import torch.nn as nn
 from torch.utils.data import DataLoader
 from scripts.unet3d import UNet3D
 from scripts.dataset import LiverTumorDataset
+from tqdm import tqdm
+
 
 # --- Configuration ---
 image_dir = 'data/images'
@@ -28,7 +30,8 @@ criterion = nn.CrossEntropyLoss() # To caculate loss
 model.train()
 for epoch in range(epochs):
     running_loss = 0.0
-for i, (images, masks) in enumerate(dataloader):
+    print(f"Epoch [{epoch+1}/{epochs}]")
+for i, (images, masks) in enumerate(tqdm(dataloader, desc="Training")):
     images, masks = images.to(device), masks.to(device)
 
     outputs = model(images)
