@@ -4,6 +4,7 @@ import numpy as np
 import torch
 from torch.utils.data import Dataset
 import torch.nn.functional as F
+from scipy.ndimage import find_objects
 
 class LiverTumorDataset(Dataset):
     def __init__(self, image_dir, mask_dir, transform=None):
@@ -20,25 +21,38 @@ class LiverTumorDataset(Dataset):
         image_path = os.path.join(self.image_dir, self.image_files[idx])
         mask_path = os.path.join(self.mask_dir, self.mask_files[idx])
 
-        # Load image and mask
         image = nib.load(image_path).get_fdata()
         mask = nib.load(mask_path).get_fdata()
 
         # Normalize image
         image = np.clip(image, 0, 400) / 400.0
 
-        # Convert to tensors and add channel dimension
-        image = torch.tensor(image, dtype=torch.float32).unsqueeze(0)  # (1, D, H, W)
-        mask = torch.tensor(mask, dtype=torch.long)  # (D, H, W)
+        image = torch.tensor(image, dtype=torch.float32)  # (D, H, W)
+        mask = torch.tensor(mask, dtype=torch.long)       # (D, H, W)
 
-        # Resize both to smallest manageable 3D shape
-        target_shape = (64, 64, 64)
+        # Target shape
+        target_shape = (96, 96, 96)
+        D, H, W = target_shape
 
-        image = F.interpolate(image.unsqueeze(0), size=target_shape, mode='trilinear', align_corners=False).squeeze(0)
-        mask = F.interpolate(mask.unsqueeze(0).unsqueeze(0).float(), size=target_shape, mode='nearest')
-        mask = mask.squeeze(0).squeeze(0).long()
+        # Find tumor bounding box
+        bbox = find_objects((mask > 0).numpy())
+        if not bbox:
+            # fallback: center crop (or skip by raising error)
+            center = [s // 2 for s in mask.shape]
+        else:
+            bbox = bbox[0]
+            center = [(s.start + s.stop) // 2 for s in bbox]
 
-        if self.transform:
-            image, mask = self.transform(image, mask)
+        # Compute start and end slices
+        start = [max(0, c - t // 2) for c, t in zip(center, target_shape)]
+        end = [min(start[i] + target_shape[i], mask.shape[i]) for i in range(3)]
+        start = [end[i] - target_shape[i] for i in range(3)]  # adjust start if near edge
+
+        # Crop
+        image = image[start[0]:end[0], start[1]:end[1], start[2]:end[2]]
+        mask = mask[start[0]:end[0], start[1]:end[1], start[2]:end[2]]
+
+        # Add channel dimension to image
+        image = image.unsqueeze(0)  # shape: (1, D, H, W)
 
         return image, mask
