@@ -7,11 +7,12 @@ import torch.nn.functional as F
 from scipy.ndimage import find_objects
 
 class LiverTumorDataset(Dataset):
-    def __init__(self, image_dir, mask_dir, transform=None):
+    def __init__(self, image_dir, mask_dir, target_shape=(96, 96, 96), transform=None):
         self.image_dir = image_dir
         self.mask_dir = mask_dir
         self.image_files = sorted([f for f in os.listdir(image_dir) if f.endswith('.nii') or f.endswith('.nii.gz')])
         self.mask_files = sorted([f for f in os.listdir(mask_dir) if f.endswith('.nii') or f.endswith('.nii.gz')])
+        self.target_shape = target_shape
         self.transform = transform
 
     def __len__(self):
@@ -46,12 +47,12 @@ class LiverTumorDataset(Dataset):
         image = image[start[0]:end[0], start[1]:end[1], start[2]:end[2]]
         mask = mask[start[0]:end[0], start[1]:end[1], start[2]:end[2]]
 
-        # Pad if crop is smaller
-        pad_dims = [
-            (0, max(0, W - image.shape[2])),  # width
-            (0, max(0, H - image.shape[1])),  # height
-            (0, max(0, D - image.shape[0])),  # depth
-        ]
+        # Pad if crop is smaller than target shape
+        pad_D = max(0, D - image.shape[0])
+        pad_H = max(0, H - image.shape[1])
+        pad_W = max(0, W - image.shape[2])
+
+        pad_dims = (0, pad_W, 0, pad_H, 0, pad_D)  # (W_left, W_right, H_left, H_right, D_left, D_right)
         image = F.pad(image, pad_dims, mode='constant', value=0)
         mask = F.pad(mask, pad_dims, mode='constant', value=0)
 
