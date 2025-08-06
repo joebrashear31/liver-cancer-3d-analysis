@@ -4,15 +4,71 @@ import numpy as np
 import torch
 from torch.utils.data import Dataset
 import torch.nn.functional as F
-from scipy.ndimage import find_objects
+import random
 
-class LiverTumorDataset(Dataset):
-    def __init__(self, image_dir, mask_dir, target_shape=(96, 96, 96), transform=None):
+class TumorOnlyPatchDataset(Dataset):
+    def __init__(self, image_dir, mask_dir, patch_size=(32, 32, 32)):
         self.image_dir = image_dir
         self.mask_dir = mask_dir
         self.image_files = sorted([f for f in os.listdir(image_dir) if f.endswith(".nii") or f.endswith(".nii.gz")])
         self.mask_files = sorted([f for f in os.listdir(mask_dir) if f.endswith(".nii") or f.endswith(".nii.gz")])
-        self.target_shape = target_shape
+        self.patch_size = patch_size
+
+    def __len__(self):
+        return len(self.image_files)
+
+    def __getitem__(self, idx):
+        image_path = os.path.join(self.image_dir, self.image_files[idx])
+        mask_path = os.path.join(self.mask_dir, self.mask_files[idx])
+
+        image = nib.load(image_path).get_fdata()
+        mask = nib.load(mask_path).get_fdata()
+
+        # Normalize intensity
+        image = np.clip(image, 0, 400) / 400.0
+        image = torch.tensor(image, dtype=torch.float32)
+        mask = torch.tensor(mask, dtype=torch.long)
+
+        # Binary mask: tumor=1, everything else=0
+        mask = torch.where(mask == 2, torch.tensor(1), torch.tensor(0))
+
+        tumor_voxels = torch.nonzero(mask == 1, as_tuple=False)
+        if len(tumor_voxels) > 0:
+            center = tumor_voxels[random.randint(0, len(tumor_voxels) - 1)]
+        else:
+            all_voxels = torch.nonzero(mask >= 0, as_tuple=False)
+            center = all_voxels[random.randint(0, len(all_voxels) - 1)]
+
+        # Extract patch
+        ps = self.patch_size
+        start = [max(0, center[d].item() - ps[d] // 2) for d in range(3)]
+        end = [start[d] + ps[d] for d in range(3)]
+
+        # Pad if needed
+        pad_D = max(0, end[0] - image.shape[0])
+        pad_H = max(0, end[1] - image.shape[1])
+        pad_W = max(0, end[2] - image.shape[2])
+        if pad_D > 0 or pad_H > 0 or pad_W > 0:
+            image = F.pad(image, (0, pad_W, 0, pad_H, 0, pad_D))
+            mask = F.pad(mask, (0, pad_W, 0, pad_H, 0, pad_D))
+
+        patch_img = image[start[0]:end[0], start[1]:end[1], start[2]:end[2]]
+        patch_mask = mask[start[0]:end[0], start[1]:end[1], start[2]:end[2]]
+
+        # Add channel dimension to image
+        patch_img = patch_img.unsqueeze(0)
+
+        return patch_img, patch_mask
+
+
+class LiverTumorPatchDataset(Dataset):
+    def __init__(self, image_dir, mask_dir, patch_size=(64, 64, 64), tumor_patch_ratio=0.7, transform=None):
+        self.image_dir = image_dir
+        self.mask_dir = mask_dir
+        self.image_files = sorted([f for f in os.listdir(image_dir) if f.endswith(".nii") or f.endswith(".nii.gz")])
+        self.mask_files = sorted([f for f in os.listdir(mask_dir) if f.endswith(".nii") or f.endswith(".nii.gz")])
+        self.patch_size = patch_size
+        self.tumor_patch_ratio = tumor_patch_ratio
         self.transform = transform
 
     def __len__(self):
@@ -25,50 +81,44 @@ class LiverTumorDataset(Dataset):
         image = nib.load(image_path).get_fdata()
         mask = nib.load(mask_path).get_fdata()
 
-        # Normalize image intensity
+        # Normalize intensity
         image = np.clip(image, 0, 400) / 400.0
+        image = torch.tensor(image, dtype=torch.float32)
+        mask = torch.tensor(mask, dtype=torch.long)
 
-        # Find bounding box around any nonzero region (liver + tumor)
-        bbox = find_objects(mask > 0)
-        if not bbox:
-            print(f"[Warning] Empty mask for file: {self.mask_files[idx]} — using full volume")
-            cropped_image = image
-            cropped_mask = mask
+        # Get voxel coordinates
+        tumor_voxels = torch.nonzero(mask == 2, as_tuple=False)
+        liver_voxels = torch.nonzero(mask == 1, as_tuple=False)
+        all_voxels = torch.nonzero(mask >= 0, as_tuple=False)
+
+        # Decide patch center
+        if len(tumor_voxels) > 0 and random.random() < self.tumor_patch_ratio:
+            center = tumor_voxels[random.randint(0, len(tumor_voxels) - 1)]
+        elif len(liver_voxels) > 0:
+            center = liver_voxels[random.randint(0, len(liver_voxels) - 1)]
         else:
-            z_slice, y_slice, x_slice = bbox[0]
-            cropped_image = image[z_slice, y_slice, x_slice]
-            cropped_mask = mask[z_slice, y_slice, x_slice]
+            center = all_voxels[random.randint(0, len(all_voxels) - 1)]
 
-        # Convert to torch tensors and add channel dimension
-        cropped_image = torch.tensor(cropped_image, dtype=torch.float32).unsqueeze(0)  # (1, D, H, W)
-        cropped_mask = torch.tensor(cropped_mask, dtype=torch.long).unsqueeze(0)       # (1, D, H, W)
+        # Extract patch
+        ps = self.patch_size
+        start = [max(0, center[d].item() - ps[d] // 2) for d in range(3)]
+        end = [start[d] + ps[d] for d in range(3)]
 
-        # Pad to at least target shape before downsampling
-        pad_D = max(0, self.target_shape[0] - cropped_image.shape[1])
-        pad_H = max(0, self.target_shape[1] - cropped_image.shape[2])
-        pad_W = max(0, self.target_shape[2] - cropped_image.shape[3])
-
+        # Pad if needed
+        pad_D = max(0, end[0] - image.shape[0])
+        pad_H = max(0, end[1] - image.shape[1])
+        pad_W = max(0, end[2] - image.shape[2])
         if pad_D > 0 or pad_H > 0 or pad_W > 0:
-            pad_dims = (0, pad_W, 0, pad_H, 0, pad_D)  # (W_left, W_right, H_left, H_right, D_left, D_right)
-            cropped_image = F.pad(cropped_image, pad_dims, mode='constant', value=0)
-            cropped_mask = F.pad(cropped_mask, pad_dims, mode='constant', value=0)
+            image = F.pad(image, (0, pad_W, 0, pad_H, 0, pad_D))
+            mask = F.pad(mask, (0, pad_W, 0, pad_H, 0, pad_D))
 
-        # Downsample crop to target shape
-        cropped_image = F.interpolate(cropped_image.unsqueeze(0), size=self.target_shape, mode='trilinear', align_corners=False).squeeze(0)
-        cropped_mask = F.interpolate(cropped_mask.float().unsqueeze(0), size=self.target_shape, mode='nearest').squeeze(0).long()
+        patch_img = image[start[0]:end[0], start[1]:end[1], start[2]:end[2]]
+        patch_mask = mask[start[0]:end[0], start[1]:end[1], start[2]:end[2]]
 
-        # Remove channel from mask
-        cropped_mask = cropped_mask.squeeze(0)
-
-        print(f"Mask values for {self.mask_files[idx]}: {torch.unique(cropped_mask)}")
-
-        unique_vals, counts = torch.unique(cropped_mask, return_counts=True)
-        print(f"Mask stats for {self.mask_files[idx]}:")
-        for val, count in zip(unique_vals.tolist(), counts.tolist()):
-            print(f"  Value {val}: {count} voxels")
-
+        # Add channel dimension to image
+        patch_img = patch_img.unsqueeze(0)
 
         if self.transform:
-            cropped_image, cropped_mask = self.transform(cropped_image, cropped_mask)
+            patch_img, patch_mask = self.transform(patch_img, patch_mask)
 
-        return cropped_image, cropped_mask
+        return patch_img, patch_mask

@@ -3,7 +3,7 @@ import torch
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
 from scripts.unet3d import UNet3D
-from scripts.dataset import LiverTumorDataset
+from scripts.dataset import LiverTumorPatchDataset
 import matplotlib.pyplot as plt
 
 # Metric used to predict the mask based on ground truth
@@ -29,7 +29,7 @@ checkpoint_path = 'models/unet3d_checkpoint.pth'
 batch_size = 1
 
 # --- Data Loading ---
-dataset = LiverTumorDataset(image_dir=image_dir, mask_dir=mask_dir)
+dataset = LiverTumorPatchDataset(image_dir=image_dir, mask_dir=mask_dir)
 dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False)
 
 # --- Load Model ---
