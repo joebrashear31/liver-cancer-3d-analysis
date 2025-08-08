@@ -44,11 +44,6 @@ This project implements a 3D U-Net architecture for automatic segmentation of li
 
 ---
 
-## 🔍 Sample Results
-_(Include screenshots here once available — e.g., CT slice with predicted vs. ground truth tumor mask overlay)_
-
----
-
 ## 🔧 Tech Stack
 - Python, PyTorch, MONAI, SimpleITK, NiBabel, matplotlib
 - Hardware: NVIDIA GPU recommended for training 3D volumes
