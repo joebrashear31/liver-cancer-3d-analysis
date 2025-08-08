@@ -58,6 +58,10 @@ class TumorOnlyPatchDataset(Dataset):
         # Add channel dimension to image
         patch_img = patch_img.unsqueeze(0)
 
+        print(f"Image shape: {patch_img.shape}")       # (1, D, H, W)
+        print(f"Mask shape: {patch_mask.shape}")       # (D, H, W)
+        print(f"Unique values in mask: {patch_mask.unique()}")  # Should show 0 and 1
+
         return patch_img, patch_mask
 
 
@@ -120,5 +124,8 @@ class LiverTumorPatchDataset(Dataset):
 
         if self.transform:
             patch_img, patch_mask = self.transform(patch_img, patch_mask)
+        print(f"Image shape: {patch_img.shape}")       # (1, D, H, W)
+        print(f"Mask shape: {patch_mask.shape}")       # (D, H, W)
+        print(f"Unique values in mask: {patch_mask.unique()}")  # Should show 0 and 1
 
         return patch_img, patch_mask

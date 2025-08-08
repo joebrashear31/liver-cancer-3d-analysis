@@ -6,6 +6,51 @@ from scripts.unet3d import UNet3D
 from scripts.dataset import LiverTumorPatchDataset
 import matplotlib.pyplot as plt
 
+def compute_class_weights(dataset, num_classes=3, max_samples=1000):
+    counter = Counter()
+    loader = DataLoader(dataset, batch_size=1, shuffle=True)
+
+    for i, (image, mask) in enumerate(loader):
+        counter.update(mask.flatten().tolist())
+        if i >= max_samples:
+            break
+
+    total = sum(counter.values())
+    weights = []
+    for i in range(num_classes):
+        freq = counter[i] / total if i in counter else 1e-6
+        weights.append(1.0 / (freq + 1e-6))
+    weights = torch.tensor(weights, dtype=torch.float32)
+    return weights / weights.sum()
+
+
+class DiceLoss(torch.nn.Module):
+    def __init__(self, smooth=1e-5):
+        super(DiceLoss, self).__init__()
+        self.smooth = smooth
+
+    def forward(self, inputs, targets):
+        inputs = F.softmax(inputs, dim=1)
+        targets_one_hot = F.one_hot(targets, num_classes=inputs.shape[1])
+        targets_one_hot = targets_one_hot.permute(0, 4, 1, 2, 3).float()
+
+        intersection = torch.sum(inputs * targets_one_hot)
+        union = torch.sum(inputs + targets_one_hot)
+        dice = (2. * intersection + self.smooth) / (union + self.smooth)
+        return 1 - dice
+
+
+class CombinedLoss(torch.nn.Module):
+    def __init__(self, class_weights=None):
+        super(CombinedLoss, self).__init__()
+        self.dice = DiceLoss()
+        self.ce = torch.nn.CrossEntropyLoss(weight=class_weights)
+
+    def forward(self, inputs, targets):
+        loss_dice = self.dice(inputs, targets)
+        loss_ce = self.ce(inputs, targets)
+        return loss_dice + loss_ce
+
 # Metric used to predict the mask based on ground truth
 # Basically testing if the model generated
 # accurate masks to separate tumors and liver tissue

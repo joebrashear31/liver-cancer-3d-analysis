@@ -16,20 +16,20 @@ from scripts.dataset import TumorOnlyPatchDataset, LiverTumorPatchDataset
 train_val_split = 0.8
 
 # Stage 1: Tumor-only
-stage1_epochs = 10
+stage1_epochs = 50
 stage1_patch_size = (32, 32, 32)
-stage1_batch_size = 1
+stage1_batch_size = 2
 stage1_lr = 1e-4
 
 # Stage 2: Full segmentation
-stage2_epochs = 10
+stage2_epochs = 100
 stage2_patch_size = (64, 64, 64)
 stage2_batch_size = 1
 stage2_lr = 1e-4
 tumor_patch_ratio = 0.7
 
 # Early stopping
-early_stopping_patience = 10
+early_stopping_patience = 10  # epochs without improvement before stopping
 
 image_dir = "data/images"
 mask_dir = "data/masks"
@@ -38,6 +38,8 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 os.makedirs("checkpoints", exist_ok=True)
 os.makedirs("logs", exist_ok=True)
 
+# Calculate the loss by finding the intersectioin
+# between ground truth and prediction.
 # ================= LOSSES ================= #
 class DiceLoss(nn.Module):
     def __init__(self, smooth=1e-5):
@@ -53,6 +55,7 @@ class DiceLoss(nn.Module):
         dice_per_class = (2. * intersection + self.smooth) / (cardinality + self.smooth)
         return 1 - dice_per_class.mean()
 
+# Calculate the combined loss
 class CombinedLoss(nn.Module):
     def __init__(self, class_weights=None, dice_weight=0.5, ce_weight=0.5):
         super(CombinedLoss, self).__init__()
@@ -159,29 +162,42 @@ if __name__ == "__main__":
     train_stage(model, stage1_train_loader, stage1_val_loader, loss_fn_stage1, optimizer_stage1, scaler,
                 stage1_epochs, 2, "Stage 1", "logs/metrics_stage1.csv", "checkpoints/unet3d_stage1_best.pth")
 
-    # ---- Stage 2: Full 3-class ----
-    stage2_dataset = LiverTumorPatchDataset(image_dir, mask_dir, patch_size=stage2_patch_size, tumor_patch_ratio=tumor_patch_ratio)
-    train_len = int(len(stage2_dataset) * train_val_split)
-    val_len = len(stage2_dataset) - train_len
-    stage2_train, stage2_val = random_split(stage2_dataset, [train_len, val_len])
+# ---- Stage 2: Full 3-class ----
+stage2_dataset = LiverTumorPatchDataset(
+    image_dir, mask_dir,
+    patch_size=stage2_patch_size,
+    tumor_patch_ratio=tumor_patch_ratio
+)
+train_len = int(len(stage2_dataset) * train_val_split)
+val_len = len(stage2_dataset) - train_len
+stage2_train, stage2_val = random_split(stage2_dataset, [train_len, val_len])
 
-    stage2_train_loader = DataLoader(stage2_train, batch_size=stage2_batch_size, shuffle=True)
-    stage2_val_loader = DataLoader(stage2_val, batch_size=1)
+stage2_train_loader = DataLoader(stage2_train, batch_size=stage2_batch_size, shuffle=True)
+stage2_val_loader = DataLoader(stage2_val, batch_size=1)
 
-    class_weights_stage2 = compute_class_weights(stage2_train, num_classes=3).to(device)
-    class_weights_stage2[2] *= 3.0  # Boost tumor weight
+class_weights_stage2 = compute_class_weights(stage2_train, num_classes=3).to(device)
+class_weights_stage2[2] *= 3.0  # Boost tumor weight
 
-    model = UNet3D(in_channels=1, out_channels=3).to(device)
+model = UNet3D(in_channels=1, out_channels=3).to(device)
 
-    # Load Stage 1 weights except final layer
-    checkpoint = torch.load("checkpoints/unet3d_stage1_best.pth", map_location=device)
-    checkpoint.pop("out_conv.weight", None)
-    checkpoint.pop("out_conv.bias", None)
-    model.load_state_dict(checkpoint, strict=False)
+# Load Stage 1 weights except the final out_conv
+checkpoint = torch.load("checkpoints/unet3d_stage1_best.pth", map_location=device)
+if "out_conv.weight" in checkpoint:
+    del checkpoint["out_conv.weight"]
+if "out_conv.bias" in checkpoint:
+    del checkpoint["out_conv.bias"]
 
-    loss_fn_stage2 = CombinedLoss(class_weights=class_weights_stage2)
-    optimizer_stage2 = optim.Adam(model.parameters(), lr=stage2_lr)
+model.load_state_dict(checkpoint, strict=False)
 
-    print("Starting Stage 2 (Full 3-class)...")
-    train_stage(model, stage2_train_loader, stage2_val_loader, loss_fn_stage2, optimizer_stage2, scaler,
-                stage2_epochs, 3, "Stage 2", "logs/metrics_stage2.csv", "checkpoints/unet3d_stage2_best.pth")
+loss_fn_stage2 = CombinedLoss(class_weights=class_weights_stage2)
+optimizer_stage2 = optim.Adam(model.parameters(), lr=stage2_lr)
+
+print("Starting Stage 2 (Full 3-class)...")
+train_stage(
+    model, stage2_train_loader, stage2_val_loader,
+    loss_fn_stage2, optimizer_stage2, scaler,
+    stage2_epochs, 3, "Stage 2",
+    "logs/metrics_stage2.csv",
+    "checkpoints/unet3d_stage2_best.pth"
+)
+   
