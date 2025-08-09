@@ -3,16 +3,17 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 from torch.utils.data import DataLoader
-
 from scripts.dataset import LiverTumorPatchDataset
 from scripts.unet3d import UNet3D  # adjust this import based on your model file
 import os
 
+# Patch of random numbers used for randomness in the model (like weights)
 def seed_everything(seed=42):
     torch.manual_seed(seed)
     torch.cuda.manual_seed(seed)
     torch.backends.cudnn.deterministic = True
 
+# Find the overlap of GT and Predicted, then calculate loss
 class DiceLoss(nn.Module):
     def __init__(self, smooth=1e-5):
         super(DiceLoss, self).__init__()
@@ -59,6 +60,7 @@ optimizer = optim.Adam(model.parameters(), lr=LR)
 criterion = DiceLoss()
 
 # Training loop
+# Calculates dice loss, then adjusts weights in the model.
 for epoch in range(NUM_EPOCHS):
     model.train()
     train_loss = 0.0
