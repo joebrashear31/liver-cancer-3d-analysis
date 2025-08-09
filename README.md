@@ -30,7 +30,7 @@ This project implements a 3D U-Net architecture for automatic segmentation of li
 ├── models/          # Saved model checkpoints
 ├── outputs/         # Predictions, logs, and metrics
 ├── train.py         # Main training script
-├── inference.py     # Run inference on new scans
+├── evaluate.py      # Main evaluation script
 └── README.md        # Project documentation
 ```
 
@@ -47,6 +47,12 @@ This project implements a 3D U-Net architecture for automatic segmentation of li
 ## 🔧 Tech Stack
 - Python, PyTorch, MONAI, SimpleITK, NiBabel, matplotlib
 - Hardware: NVIDIA GPU recommended for training 3D volumes
+
+---
+
+## 😀 Sample Output!
+
+<img width="1193" height="434" alt="Screenshot 2025-08-09 at 12 11 06 PM" src="https://github.com/user-attachments/assets/a8edc346-1a4e-4215-8acb-aace7b88a69f" />
 
 ---
 
